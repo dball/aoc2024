@@ -31,25 +31,29 @@ fn build_board(lines: List(String)) -> Board {
 
 fn build_xs(word: String) -> Option(List(Board)) {
   let chars = string.to_graphemes(word)
-  let n = list.length(chars)
+  let n = list.length(chars) - 1
   case n % 2 {
-    1 -> {
+    0 -> {
       Some([
         list.index_fold(chars, dict.new(), fn(board, char, i) {
-          let board = dict.insert(board, #(i, i), char)
-          dict.insert(board, #(n - i - 1, i), char)
+          board
+          |> dict.insert(#(i, i), char)
+          |> dict.insert(#(n - i, i), char)
         }),
         list.index_fold(chars, dict.new(), fn(board, char, i) {
-          let board = dict.insert(board, #(i, i), char)
-          dict.insert(board, #(i, n - i - 1), char)
+          board
+          |> dict.insert(#(i, i), char)
+          |> dict.insert(#(i, n - i), char)
         }),
         list.index_fold(chars, dict.new(), fn(board, char, i) {
-          let board = dict.insert(board, #(n - i - 1, n - i - 1), char)
-          dict.insert(board, #(n - i - 1, i), char)
+          board
+          |> dict.insert(#(n - i, n - i), char)
+          |> dict.insert(#(n - i, i), char)
         }),
         list.index_fold(chars, dict.new(), fn(board, char, i) {
-          let board = dict.insert(board, #(n - i - 1, n - i - 1), char)
-          dict.insert(board, #(i, n - i - 1), char)
+          board
+          |> dict.insert(#(n - i, n - i), char)
+          |> dict.insert(#(i, n - i), char)
         }),
       ])
     }
