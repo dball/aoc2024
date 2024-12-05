@@ -85,7 +85,9 @@ fn project_all(word: String, point: Point) -> List(Board) {
 }
 
 fn contains(board: Board, projection: Board) -> Bool {
-  board == dict.combine(board, projection, fn(_, y) { y })
+  list.all(dict.keys(projection), fn(k) {
+    dict.get(projection, k) == dict.get(board, k)
+  })
 }
 
 fn finds(board: Board, word: String, point: Point) -> Int {
@@ -101,9 +103,6 @@ pub fn main() {
   let board = build_board(lines)
   let points = dict.keys(board)
   let count =
-    list.fold(points, 0, fn(accum, point) {
-      //io.debug(point)
-      accum + finds(board, word, point)
-    })
+    list.fold(points, 0, fn(accum, point) { accum + finds(board, word, point) })
   io.debug(count)
 }
