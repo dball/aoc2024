@@ -1,6 +1,8 @@
+import gleam/bool
 import gleam/int
 import gleam/io
 import gleam/list.{Continue, Stop}
+import gleam/order.{type Order, Eq, Gt, Lt}
 import gleam/set.{type Set}
 import gleam/string
 import simplifile
@@ -39,6 +41,23 @@ fn valid(violations: Set(Pair), run: Run) -> Bool {
   valid
 }
 
+fn conj(violations: Set(Pair), run: Run, page: Int) -> Run {
+  case run {
+    [] -> [page]
+    _ -> {
+      let #(before, after) =
+        list.split_while(run, fn(ppage) {
+          set.contains(violations, #(ppage, page))
+        })
+      list.flatten([before, [page], after])
+    }
+  }
+}
+
+fn sort(violations: Set(Pair), run: Run) -> Run {
+  list.fold(run, [], fn(accum, page) { conj(violations, accum, page) })
+}
+
 fn parse_input(data: String) -> #(Rules, List(Run)) {
   let assert Ok(#(part1, part2)) = string.split_once(data, "\n\n")
   let rules =
@@ -73,4 +92,9 @@ pub fn main() {
   let valids = list.filter(runs, valid(violations, _))
   let assert Ok(midpoints) = list.map(valids, midpoint) |> list.reduce(int.add)
   io.debug(midpoints)
+  let invalids = list.filter(runs, fn(run) { !valid(violations, run) })
+  let sorted_runs = list.map(invalids, fn(run) { sort(violations, run) })
+  let assert Ok(sorted_midpoints) =
+    list.map(sorted_runs, midpoint) |> list.reduce(int.add)
+  io.debug(sorted_midpoints)
 }
