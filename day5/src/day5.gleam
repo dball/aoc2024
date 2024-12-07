@@ -1,8 +1,6 @@
-import gleam/bool
 import gleam/int
 import gleam/io
 import gleam/list.{Continue, Stop}
-import gleam/order.{type Order, Eq, Gt, Lt}
 import gleam/set.{type Set}
 import gleam/string
 import simplifile
