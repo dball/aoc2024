@@ -13,8 +13,17 @@ type Board {
   Board(locations: Dict(Point, Location), guard: Guard)
 }
 
+type Vector {
+  Vector(point: Point, direction: Direction)
+}
+
 type Guard {
-  Guard(point: Point, history: List(Point), facing: Direction)
+  Guard(
+    point: Option(Point),
+    history: List(Vector),
+    direction: Direction,
+    looping: Bool,
+  )
 }
 
 type Location {
@@ -48,31 +57,60 @@ fn clockwise(direction: Direction) -> Direction {
   }
 }
 
-fn advance_guard(board: Board) -> Option(Board) {
+fn advance_guard(board: Board) -> Board {
   let Board(locations, guard) = board
-  let Guard(point, history, facing) = guard
-  let next = next_point(point, facing)
-  case dict.get(locations, next) {
-    Ok(Obstacle) -> {
-      let guard = Guard(..guard, facing: clockwise(facing))
-      Some(Board(..board, guard: guard))
+  let Guard(point, history, direction, _) = guard
+  case point {
+    Some(point) -> {
+      let next = next_point(point, direction)
+      case dict.get(locations, next) {
+        Ok(Obstacle) -> {
+          let next_direction = clockwise(direction)
+          let vector = Vector(point, next_direction)
+          let guard =
+            Guard(
+              ..guard,
+              direction: next_direction,
+              history: [vector, ..history],
+            )
+          Board(..board, guard: guard)
+        }
+        Ok(Empty) -> {
+          let vector = Vector(next, direction)
+          case list.find(history, fn(v) { vector == v }) {
+            Ok(_) -> {
+              let guard =
+                Guard(
+                  ..guard,
+                  point: Some(next),
+                  history: [vector, ..history],
+                  looping: True,
+                )
+              Board(..board, guard: guard)
+            }
+            Error(_) -> {
+              let guard =
+                Guard(..guard, point: Some(next), history: [vector, ..history])
+              Board(..board, guard: guard)
+            }
+          }
+        }
+        Error(_) -> {
+          let guard = Guard(..guard, point: None)
+          Board(..board, guard: guard)
+        }
+      }
     }
-    Ok(Empty) -> {
-      let guard = Guard(..guard, point: next, history: [next, ..history])
-      Some(Board(..board, guard: guard))
-    }
-    Error(_) -> {
-      None
-    }
+    None -> board
   }
 }
 
-// Higher order pattern here? Iterate until None
 fn advance_guard_until_gone(board: Board) -> Board {
-  let next = advance_guard(board)
-  case next {
-    Some(board) -> advance_guard_until_gone(board)
-    None -> board
+  let board = advance_guard(board)
+  case board.guard {
+    Guard(_, _, _, True) -> board
+    Guard(None, _, _, _) -> board
+    _ -> advance_guard_until_gone(board)
   }
 }
 
@@ -81,19 +119,24 @@ fn parse_input(data: String) -> Board {
   let board =
     Board(
       locations: dict.new(),
-      guard: Guard(point: #(0, 0), history: [], facing: N),
+      guard: Guard(point: None, history: [], direction: N, looping: False),
     )
   list.index_fold(lines, board, fn(board, line, i) {
     let chars = string.to_graphemes(line)
     list.index_fold(chars, board, fn(board, char, j) {
       let point = #(i, j)
-      let Board(locations, _) = board
+      let Board(locations, guard) = board
       case char {
         "." -> Board(..board, locations: dict.insert(locations, point, Empty))
         "#" ->
           Board(..board, locations: dict.insert(locations, point, Obstacle))
         "^" -> {
-          let guard = Guard(..board.guard, point: point, history: [point])
+          let guard =
+            Guard(
+              ..guard,
+              point: Some(point),
+              history: [Vector(point, guard.direction)],
+            )
           Board(locations: dict.insert(locations, point, Empty), guard: guard)
         }
         _ -> board
@@ -107,6 +150,23 @@ pub fn main() {
   let assert Ok(data) = simplifile.read(path)
   let board = parse_input(data)
   let advanced = advance_guard_until_gone(board)
-  let points = set.from_list(advanced.guard.history)
+  let guard = advanced.guard
+  let points = set.from_list(guard.history)
   io.debug(set.size(points))
+
+  let potentia =
+    guard.history
+    |> list.map(fn(vector) { vector.point })
+    |> set.from_list
+
+  let loopers =
+    potentia
+    |> set.filter(fn(point) {
+      let board =
+        Board(..board, locations: dict.insert(board.locations, point, Obstacle))
+      let advanced = advance_guard_until_gone(board)
+      advanced.guard.looping
+    })
+    |> set.size
+  io.debug(loopers)
 }
