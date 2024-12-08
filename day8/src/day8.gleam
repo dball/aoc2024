@@ -4,6 +4,7 @@ import gleam/list
 import gleam/option.{None, Some}
 import gleam/set.{type Set}
 import gleam/string
+import gleam/yielder
 import simplifile
 
 type Point =
@@ -53,24 +54,53 @@ fn within_limits(city: City, point: Point) -> Bool {
   i >= 0 && j >= 0 && i < mi && j < mj
 }
 
-fn project_antinodes(points: Set(Point)) -> Set(Point) {
+fn point_add(p1: Point, p2: Point) -> Point {
+  #(p1.0 + p2.0, p1.1 + p2.1)
+}
+
+fn point_subtract(p1: Point, p2: Point) -> Point {
+  #(p1.0 - p2.0, p1.1 - p2.1)
+}
+
+fn project_antinodes(
+  city: City,
+  harmonics: Bool,
+  points: Set(Point),
+) -> Set(Point) {
+  let within = within_limits(city, _)
   let pairs = set.to_list(points) |> list.combination_pairs
   list.fold(pairs, set.new(), fn(antinodes, pair) {
     let #(x, y) = pair
-    let #(xi, xj) = x
-    let #(yi, yj) = y
-    let di = yi - xi
-    let dj = yj - xj
-    antinodes
-    |> set.insert(#(yi + di, yj + dj))
-    |> set.insert(#(xi - di, xj - dj))
+    let d = point_subtract(y, x)
+    case harmonics {
+      False -> {
+        let new_points =
+          set.new()
+          |> set.insert(point_add(y, d))
+          |> set.insert(point_subtract(x, d))
+          |> set.filter(within)
+        set.union(antinodes, new_points)
+      }
+      True -> {
+        let from_y =
+          yielder.iterate(y, point_add(_, d))
+          |> yielder.take_while(within)
+          |> yielder.to_list
+          |> set.from_list
+        let from_x =
+          yielder.iterate(x, point_subtract(_, d))
+          |> yielder.take_while(within)
+          |> yielder.to_list
+          |> set.from_list
+        set.union(antinodes, set.union(from_x, from_y))
+      }
+    }
   })
 }
 
-fn project_city_antinodes(city: City) -> Set(Point) {
+fn project_city_antinodes(city: City, harmonics: Bool) -> Set(Point) {
   dict.fold(city.antennas, set.new(), fn(all_antinodes, _, points) {
-    project_antinodes(points)
-    |> set.filter(within_limits(city, _))
+    project_antinodes(city, harmonics, points)
     |> set.union(all_antinodes)
   })
 }
@@ -79,6 +109,8 @@ pub fn main() {
   let path = "input.txt"
   let assert Ok(data) = simplifile.read(path)
   let city = parse_input(data)
-  let count = project_city_antinodes(city) |> set.size
+  let count = project_city_antinodes(city, False) |> set.size
+  io.debug(count)
+  let count = project_city_antinodes(city, True) |> set.size
   io.debug(count)
 }
