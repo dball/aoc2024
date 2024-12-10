@@ -1,7 +1,7 @@
 import gleam/dict.{type Dict}
 import gleam/int
 import gleam/io
-import gleam/list
+import gleam/list.{Continue, Stop}
 import gleam/option.{type Option, None, Some}
 import gleam/string
 import simplifile
@@ -87,8 +87,94 @@ fn compact_disk_loop(
   }
 }
 
+fn disk_sectors(disk: Disk) -> List(#(Int, Option(Int))) {
+  dict.to_list(disk.sectors) |> list.sort(fn(x, y) { int.compare(x.0, y.0) })
+}
+
+fn find_holes(disk: Disk) -> List(#(Int, Int)) {
+  disk_sectors(disk)
+  |> list.fold([], fn(holes, entry) {
+    let #(sector, contents) = entry
+    case contents {
+      Some(_) -> holes
+      None -> {
+        case holes {
+          [#(offset, length), ..rest] if offset + length == sector -> [
+            #(offset, length + 1),
+            ..rest
+          ]
+          _ -> [#(sector, 1), ..holes]
+        }
+      }
+    }
+  })
+  |> list.reverse
+}
+
+fn find_whole_files(disk: Disk) -> List(#(Int, #(Int, Int))) {
+  disk_sectors(disk)
+  |> list.fold(dict.new(), fn(files, entry) {
+    let #(sector, contents) = entry
+    case contents {
+      None -> files
+      Some(id) -> {
+        dict.upsert(files, id, fn(value) {
+          case value {
+            None -> [#(sector, 1)]
+            Some([#(offset, length), ..rest]) if offset + length == sector -> [
+              #(offset, length + 1),
+              ..rest
+            ]
+            Some(rest) -> [#(sector, 1), ..rest]
+          }
+        })
+      }
+    }
+  })
+  |> dict.fold([], fn(files, id, chunks) {
+    case chunks {
+      [chunk] -> [#(id, chunk), ..files]
+      _ -> files
+    }
+  })
+  |> list.sort(fn(x, y) { int.compare(x.0, y.0) })
+}
+
 fn defrag_disk(disk: Disk) -> Disk {
-  todo
+  let holes = find_holes(disk)
+  io.debug(holes)
+  let files = find_whole_files(disk) |> list.reverse()
+  io.debug(files)
+  list.fold(files, #(disk, holes), fn(accum, file) {
+    io.debug(#("file", file))
+    io.debug(#("holes"))
+    let #(id, #(offset, length)) = file
+    list.fold_until(holes, accum, fn(accum, hole) {
+      let #(disk, holes) = accum
+      let #(hole_offset, hole_length) = hole
+      case hole_length >= length {
+        True -> {
+          io.debug(#("found hole", hole))
+          let disk =
+            disk
+            |> fill_sectors(hole_offset, length, Some(id))
+            |> fill_sectors(offset, length, None)
+          io.debug(#("filled hole", print_disk(disk)))
+          let holes =
+            list.map(holes, fn(h) {
+              case h == hole {
+                // Eh, we'll leave empty holes but whatev
+                True -> #(hole_offset + length, hole_length - length)
+                False -> h
+              }
+            })
+          io.debug(#("filled holes", holes))
+          Stop(#(disk, holes))
+        }
+        False -> Continue(#(disk, holes))
+      }
+    })
+  }).0
 }
 
 fn compute_checksum(disk: Disk) -> Int {
@@ -104,11 +190,28 @@ fn compute_checksum(disk: Disk) -> Int {
   })
 }
 
+fn print_disk(disk: Disk) -> String {
+  list.fold(disk_sectors(disk), "", fn(s, sector) {
+    let #(_, contents) = sector
+    case contents {
+      Some(id) -> string.append(s, int.to_string(id))
+      None -> string.append(s, ".")
+    }
+  })
+}
+
 pub fn main() {
-  let path = "input.txt"
+  let path = "input0.txt"
   let assert Ok(data) = simplifile.read(path)
   let disk = parse_disk_map(data)
+  io.debug(print_disk(disk))
+
   let compacted = compact_disk(disk)
+  io.debug(print_disk(compacted))
   io.debug(compute_checksum(compacted))
+
+  let defragged = defrag_disk(disk)
+  io.debug(print_disk(defragged))
+  io.debug(compute_checksum(defragged))
   io.println("Done")
 }
