@@ -146,20 +146,17 @@ fn defrag_disk(disk: Disk) -> Disk {
   let files = find_whole_files(disk) |> list.reverse()
   io.debug(files)
   list.fold(files, #(disk, holes), fn(accum, file) {
-    io.debug(#("file", file))
-    io.debug(#("holes"))
+    let #(_, holes) = accum
     let #(id, #(offset, length)) = file
     list.fold_until(holes, accum, fn(accum, hole) {
       let #(disk, holes) = accum
       let #(hole_offset, hole_length) = hole
       case hole_length >= length {
         True -> {
-          io.debug(#("found hole", hole))
           let disk =
             disk
             |> fill_sectors(hole_offset, length, Some(id))
             |> fill_sectors(offset, length, None)
-          io.debug(#("filled hole", print_disk(disk)))
           let holes =
             list.map(holes, fn(h) {
               case h == hole {
@@ -168,7 +165,6 @@ fn defrag_disk(disk: Disk) -> Disk {
                 False -> h
               }
             })
-          io.debug(#("filled holes", holes))
           Stop(#(disk, holes))
         }
         False -> Continue(#(disk, holes))
@@ -204,14 +200,11 @@ pub fn main() {
   let path = "input0.txt"
   let assert Ok(data) = simplifile.read(path)
   let disk = parse_disk_map(data)
-  io.debug(print_disk(disk))
 
   let compacted = compact_disk(disk)
-  io.debug(print_disk(compacted))
   io.debug(compute_checksum(compacted))
 
   let defragged = defrag_disk(disk)
-  io.debug(print_disk(defragged))
   io.debug(compute_checksum(defragged))
   io.println("Done")
 }
