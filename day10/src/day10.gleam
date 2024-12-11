@@ -11,7 +11,7 @@ type Point {
 }
 
 type Node {
-  Node(x: Int, y: Int, z: Int, ups: List(Point), downs: List(Point))
+  Node(x: Int, y: Int, z: Int, ups: List(Point))
 }
 
 type Topomap {
@@ -25,7 +25,7 @@ fn parse_topomap(s: String) -> Topomap {
       let chars = string.to_graphemes(line)
       list.index_fold(chars, nodes, fn(nodes, char, x) {
         let assert Ok(z) = int.parse(char)
-        dict.insert(nodes, Point(x, y), Node(x, y, z, [], []))
+        dict.insert(nodes, Point(x, y), Node(x, y, z, []))
       })
     })
   Topomap(nodes, 0, 9)
@@ -47,8 +47,6 @@ fn build_paths(topomap: Topomap) -> Topomap {
         case read_node(topomap, neighbor) {
           Ok(nn) if nn.z - 1 == node.z ->
             Node(..node, ups: [Point(nn.x, nn.y), ..node.ups])
-          Ok(nn) if nn.z + 1 == node.z ->
-            Node(..node, downs: [Point(nn.x, nn.y), ..node.downs])
           _ -> node
         }
       })
@@ -87,32 +85,16 @@ pub fn main() {
   let topomap = parse_topomap(data)
   let topomap = build_paths(topomap)
 
-  let trailheads = find_trailheads(topomap)
-  let scores =
-    trailheads
-    |> list.map(fn(trailhead) {
-      let climbs = find_climbs(topomap, [trailhead])
-      let peaks =
-        climbs
-        |> list.map(fn(nodes) {
-          let assert Ok(peak) = list.first(nodes)
-          peak
-        })
-        |> set.from_list
-      set.size(peaks)
+  let climbs = find_climbs(topomap, [])
+  let pairs =
+    list.map(climbs, fn(climb) {
+      let assert Ok(first) = list.first(climb)
+      let assert Ok(last) = list.last(climb)
+      #(first, last)
     })
-
-  io.debug(scores)
-  let total = list.fold(scores, 0, int.add)
-  io.debug(total)
-
-  let ratings =
-    trailheads
-    |> list.map(fn(trailhead) {
-      let climbs = find_climbs(topomap, [trailhead])
-      list.length(climbs)
-    })
-  let total = list.fold(ratings, 0, int.add)
-  io.debug(total)
+    |> set.from_list
+    |> set.size
+  io.debug(pairs)
+  io.debug(list.length(climbs))
   io.println("Done")
 }
