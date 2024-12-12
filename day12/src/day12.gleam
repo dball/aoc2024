@@ -3,6 +3,7 @@ import gleam/io
 import gleam/list
 import gleam/option.{type Option, None, Some}
 import gleam/string
+import simplifile
 
 type Point {
   Point(x: Int, y: Int)
@@ -17,12 +18,10 @@ type Direction {
 
 fn project(point: Point, direction: Direction) -> Point {
   case direction {
-    // WTF this is the debug bug. If we don't destructure point,
-    // but specify all fields, the bug vanishes.
-    N -> Point(..point, y: point.y - 1)
-    S -> Point(..point, y: point.y + 1)
-    W -> Point(..point, x: point.x - 1)
-    E -> Point(..point, x: point.x + 1)
+    N -> Point(x: point.x, y: point.y - 1)
+    S -> Point(x: point.x, y: point.y + 1)
+    W -> Point(y: point.y, x: point.x - 1)
+    E -> Point(y: point.y, x: point.x + 1)
   }
 }
 
@@ -53,34 +52,57 @@ fn find_region(garden: Garden, point: Point) -> Option(Region) {
 
 // Always add from west to east (increasing x), north to south (increasing y)
 fn conj_plot(garden: Garden, plot: Plot) -> Garden {
-  let region = {
-    case find_region(garden, project(plot.point, W)) {
-      Some(neighbor) if neighbor.crop == plot.crop -> {
+  let west = find_region(garden, project(plot.point, W))
+  let north = find_region(garden, project(plot.point, N))
+  let #(add, delete) = case west, north {
+    Some(west), Some(north)
+      if west.crop == plot.crop
+      && north.crop == plot.crop
+      && west.origin != north.origin
+    -> {
+      #(
         Region(
-          ..neighbor,
-          area: neighbor.area + 1,
-          perimeter: neighbor.perimeter + 2,
-        )
-      }
-      _ -> Region(plot.crop, plot.point, 1, 4)
+          ..west,
+          area: west.area + north.area + 1,
+          perimeter: west.perimeter + north.perimeter,
+        ),
+        Some(north),
+      )
+    }
+    Some(west), Some(north)
+      if west.crop == plot.crop && north.crop == plot.crop
+    -> {
+      #(Region(..west, area: west.area + 1), None)
+    }
+    Some(west), _ if west.crop == plot.crop -> #(
+      Region(..west, area: west.area + 1, perimeter: west.perimeter + 2),
+      None,
+    )
+    _, Some(north) if north.crop == plot.crop -> #(
+      Region(..north, area: north.area + 1, perimeter: north.perimeter + 2),
+      None,
+    )
+    _, _ -> #(Region(plot.crop, plot.point, 1, 4), None)
+  }
+  let garden =
+    Garden(
+      dict.insert(garden.regions_by_origin, add.origin, add),
+      dict.insert(garden.origins_by_point, plot.point, add.origin),
+    )
+  case delete {
+    None -> garden
+    Some(delete) -> {
+      Garden(
+        dict.delete(garden.regions_by_origin, delete.origin),
+        dict.map_values(garden.origins_by_point, fn(_, origin) {
+          case origin == delete.origin {
+            True -> add.origin
+            False -> origin
+          }
+        }),
+      )
     }
   }
-  let region = {
-    case find_region(garden, project(plot.point, N)) {
-      Some(neighbor) if neighbor.crop == plot.crop -> {
-        Region(
-          ..neighbor,
-          area: neighbor.area + 1,
-          perimeter: neighbor.perimeter + 2,
-        )
-      }
-      _ -> region
-    }
-  }
-  Garden(
-    dict.insert(garden.regions_by_origin, region.origin, region),
-    dict.insert(garden.origins_by_point, plot.point, region.origin),
-  )
 }
 
 fn parse_input(s: String) -> Garden {
@@ -90,16 +112,20 @@ fn parse_input(s: String) -> Garden {
     let chars = string.to_graphemes(line)
     list.index_fold(chars, garden, fn(garden, char, x) {
       let plot = Plot(char, Point(x, y))
-      // WTF I get different output if the debug runs or not????
-      //io.debug(plot)
       conj_plot(garden, plot)
     })
   })
 }
 
+fn compute_fence_price(garden: Garden) -> Int {
+  dict.values(garden.regions_by_origin)
+  |> list.fold(0, fn(total, region) { total + region.area * region.perimeter })
+}
+
 pub fn main() {
-  let input = "ABA\nAAA"
+  let path = "input.txt"
+  let assert Ok(input) = simplifile.read(path)
   let garden = parse_input(input)
-  io.debug(garden)
+  io.debug(compute_fence_price(garden))
   io.println("Done")
 }
