@@ -17,6 +17,8 @@ type Direction {
 
 fn project(point: Point, direction: Direction) -> Point {
   case direction {
+    // WTF this is the debug bug. If we don't destructure point,
+    // but specify all fields, the bug vanishes.
     N -> Point(..point, y: point.y - 1)
     S -> Point(..point, y: point.y + 1)
     W -> Point(..point, x: point.x - 1)
