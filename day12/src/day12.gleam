@@ -26,7 +26,7 @@ fn project(point: Point, direction: Direction) -> Point {
 }
 
 type Region {
-  Region(crop: String, origin: Point, area: Int, perimeter: Int)
+  Region(crop: String, origin: Point, area: Int, perimeter: Int, sides: Int)
 }
 
 type Garden {
@@ -50,39 +50,126 @@ fn find_region(garden: Garden, point: Point) -> Option(Region) {
   }
 }
 
-// Always add from west to east (increasing x), north to south (increasing y)
 fn conj_plot(garden: Garden, plot: Plot) -> Garden {
-  let west = find_region(garden, project(plot.point, W))
-  let north = find_region(garden, project(plot.point, N))
-  let #(add, delete) = case west, north {
-    Some(west), Some(north)
-      if west.crop == plot.crop
-      && north.crop == plot.crop
-      && west.origin != north.origin
-    -> {
+  let w = project(plot.point, W)
+  let nw = project(w, N)
+  let n = project(nw, E)
+  let ne = project(n, E)
+  let wr = find_region(garden, w)
+  let nwr = find_region(garden, nw)
+  let nr = find_region(garden, n)
+  let ner = find_region(garden, ne)
+  let joins = fn(region: Option(Region)) {
+    case region {
+      Some(region) if region.crop == plot.crop -> Some(region)
+      _ -> None
+    }
+  }
+  let wra = joins(wr)
+  let nwra = joins(nwr)
+  let nra = joins(nr)
+  let nera = joins(ner)
+  let #(add, delete) = case wra, nwra, nra, nera {
+    Some(region), Some(_), Some(_), Some(_) -> {
+      #(Region(..region, area: region.area + 1), None)
+    }
+    None, Some(region), Some(_), Some(_) -> {
       #(
         Region(
-          ..west,
-          area: west.area + north.area + 1,
-          perimeter: west.perimeter + north.perimeter,
+          ..region,
+          area: region.area + 1,
+          perimeter: region.perimeter + 2,
+          sides: region.sides + 4,
         ),
-        Some(north),
+        None,
       )
     }
-    Some(west), Some(north)
-      if west.crop == plot.crop && north.crop == plot.crop
-    -> {
-      #(Region(..west, area: west.area + 1), None)
+    None, None, Some(region), Some(_) -> {
+      #(
+        Region(
+          ..region,
+          area: region.area + 1,
+          perimeter: region.perimeter + 2,
+          sides: region.sides + 2,
+        ),
+        None,
+      )
     }
-    Some(west), _ if west.crop == plot.crop -> #(
-      Region(..west, area: west.area + 1, perimeter: west.perimeter + 2),
-      None,
-    )
-    _, Some(north) if north.crop == plot.crop -> #(
-      Region(..north, area: north.area + 1, perimeter: north.perimeter + 2),
-      None,
-    )
-    _, _ -> #(Region(plot.crop, plot.point, 1, 4), None)
+    Some(region), Some(_), Some(_), None -> {
+      #(Region(..region, area: region.area + 1, sides: region.sides - 2), None)
+    }
+    None, Some(region), Some(_), None -> {
+      #(
+        Region(
+          ..region,
+          area: region.area + 1,
+          perimeter: region.perimeter + 2,
+          sides: region.sides + 2,
+        ),
+        None,
+      )
+    }
+    Some(region), Some(_), None, _ -> {
+      #(
+        Region(
+          ..region,
+          area: region.area + 1,
+          perimeter: region.perimeter + 2,
+          sides: region.sides + 2,
+        ),
+        None,
+      )
+    }
+    Some(region), None, None, _ -> {
+      #(
+        Region(..region, area: region.area + 1, perimeter: region.perimeter + 2),
+        None,
+      )
+    }
+    None, None, Some(region), None -> {
+      #(
+        Region(..region, area: region.area + 1, perimeter: region.perimeter + 2),
+        None,
+      )
+    }
+    Some(region1), None, Some(region2), None -> {
+      case region1.origin == region2.origin {
+        True -> #(
+          Region(..region1, area: region1.area + 1, sides: region1.sides - 2),
+          None,
+        )
+        False -> {
+          #(
+            Region(
+              ..region1,
+              area: region1.area + region2.area + 1,
+              perimeter: region1.perimeter + region2.perimeter,
+              sides: region1.sides + region2.sides - 2,
+            ),
+            Some(region2),
+          )
+        }
+      }
+    }
+    Some(region1), None, Some(region2), Some(_) -> {
+      case region1.origin == region2.origin {
+        True -> #(Region(..region1, area: region1.area + 1), None)
+        False -> {
+          #(
+            Region(
+              ..region1,
+              area: region1.area + region2.area + 1,
+              perimeter: region1.perimeter + region2.perimeter,
+              sides: region1.sides + region2.sides,
+            ),
+            Some(region2),
+          )
+        }
+      }
+    }
+    None, _, None, _ -> {
+      #(Region(plot.crop, plot.point, 1, 4, 4), None)
+    }
   }
   let garden =
     Garden(
@@ -122,10 +209,16 @@ fn compute_fence_price(garden: Garden) -> Int {
   |> list.fold(0, fn(total, region) { total + region.area * region.perimeter })
 }
 
+fn compute_bulk_fence_price(garden: Garden) -> Int {
+  dict.values(garden.regions_by_origin)
+  |> list.fold(0, fn(total, region) { total + region.area * region.sides })
+}
+
 pub fn main() {
   let path = "input.txt"
   let assert Ok(input) = simplifile.read(path)
   let garden = parse_input(input)
   io.debug(compute_fence_price(garden))
+  io.debug(compute_bulk_fence_price(garden))
   io.println("Done")
 }
