@@ -1,7 +1,7 @@
-import gleam/dict.{type Dict}
+import gleam/dict
 import gleam/int
 import gleam/io
-import gleam/list.{Continue, Stop}
+import gleam/list
 import gleam/option.{type Option, None, Some}
 import gleam/set.{type Set}
 import gleam/string
@@ -97,57 +97,76 @@ fn parse_input(input: String) -> Warehouse {
   })
 }
 
-// TODO remove the boxes first
 fn move_boxes(
   warehouse: Warehouse,
   boxes: Set(Box),
   direction: Direction,
 ) -> Option(Warehouse) {
-  case set.is_subset(boxes, warehouse.boxes) {
-    False -> None
+  io.println("moving boxes")
+  io.println(render_direction(direction))
+  //io.println(render_warehouse(warehouse))
+  io.debug(boxes)
+  let boxes_after_moving =
+    set.map(boxes, fn(box) {
+      Box(set.map(box.locations, project(_, direction)))
+    })
+  let box_destinations =
+    set.fold(boxes_after_moving, set.new(), fn(accum, box) {
+      set.union(accum, box.locations)
+    })
+  io.debug(#("boxes after moving", boxes_after_moving))
+  io.debug(#("box destinations", box_destinations))
+  case set.is_empty(set.intersection(warehouse.walls, box_destinations)) {
     True -> {
-      let warehouse =
-        Warehouse(..warehouse, boxes: set.difference(warehouse.boxes, boxes))
-      let next_boxes =
-        set.map(boxes, fn(box) {
-          Box(set.map(box.locations, project(_, direction)))
+      io.println("no walls")
+      let boxes_to_move_next =
+        set.filter(warehouse.boxes, fn(box) {
+          !set.is_empty(set.intersection(box_destinations, box.locations))
         })
-      let next_locations =
-        set.fold(next_boxes, set.new(), fn(accum, box) {
-          set.union(accum, box.locations)
-        })
-      case set.is_empty(set.intersection(warehouse.walls, next_locations)) {
+      case set.is_empty(boxes_to_move_next) {
         True -> {
-          let boxes_to_move =
-            set.filter(warehouse.boxes, fn(box) {
-              !set.is_empty(set.intersection(next_locations, box.locations))
-            })
-          let warehouse =
+          io.println("no boxes to move further")
+          Some(
             Warehouse(
               ..warehouse,
-              boxes: set.union(warehouse.boxes, next_boxes),
-            )
-          case set.is_empty(boxes_to_move) {
-            True -> Some(warehouse)
-            False -> {
-              io.debug(#(
-                "MOVING BOXES",
-                boxes,
-                next_boxes,
-                boxes_to_move,
-                direction,
-              ))
-              move_boxes(warehouse, boxes_to_move, direction)
-            }
-          }
+              boxes: set.union(warehouse.boxes, boxes_after_moving),
+            ),
+          )
         }
-        False -> None
+        False -> {
+          io.println("trying to move more boxes")
+          move_boxes(
+            Warehouse(
+              ..warehouse,
+              boxes: set.difference(warehouse.boxes, boxes_to_move_next)
+                |> set.union(boxes_after_moving),
+            ),
+            boxes_to_move_next,
+            direction,
+          )
+        }
       }
+    }
+    False -> {
+      io.println("hit a wall")
+      None
     }
   }
 }
 
+fn render_direction(direction: Direction) -> String {
+  case direction {
+    N -> "N"
+    S -> "S"
+    E -> "E"
+    W -> "W"
+  }
+}
+
 fn move_robot(warehouse: Warehouse, direction: Direction) -> Warehouse {
+  io.println("moving robot")
+  io.println(render_direction(direction))
+  //io.println(render_warehouse(warehouse))
   let robot = warehouse.robot
   let next_location = project(robot.location, direction)
   case set.contains(warehouse.walls, next_location) {
@@ -157,19 +176,34 @@ fn move_robot(warehouse: Warehouse, direction: Direction) -> Warehouse {
         set.filter(warehouse.boxes, fn(box) {
           set.contains(box.locations, next_location)
         })
-      case move_boxes(warehouse, boxes, direction) {
-        None -> warehouse
-        Some(warehouse) -> {
-          let robot = Robot(..robot, location: next_location)
-          let warehouse = Warehouse(..warehouse, robot: robot)
-          io.println(case direction {
-            N -> "N"
-            S -> "S"
-            E -> "E"
-            W -> "W"
-          })
-          io.println(render_warehouse(warehouse))
-          warehouse
+      let robot = Robot(..robot, location: next_location)
+      case set.is_empty(boxes) {
+        True -> {
+          io.println("robot moved easily")
+          Warehouse(..warehouse, robot: robot)
+        }
+        _ -> {
+          case
+            move_boxes(
+              Warehouse(
+                ..warehouse,
+                boxes: set.difference(warehouse.boxes, boxes),
+              ),
+              boxes,
+              direction,
+            )
+          {
+            None -> {
+              io.println("robot could not move")
+              warehouse
+            }
+            Some(warehouse) -> {
+              io.println("robot moved to")
+              let warehouse = Warehouse(..warehouse, robot: robot)
+              //io.println(render_warehouse(warehouse))
+              warehouse
+            }
+          }
         }
       }
     }
@@ -193,21 +227,15 @@ fn compute_gps(point: Point) -> Int {
   100 * point.y + point.x
 }
 
-fn compute_box_gps(warehouse: Warehouse, box: Box) -> Int {
-  let xs =
+fn compute_box_gps(box: Box) -> Int {
+  let assert Ok(x) =
     box.locations
     |> set.map(fn(point) { point.x })
     |> set.to_list
     |> list.sort(int.compare)
-  let assert Ok(minx) = list.first(xs)
-  let assert Ok(maxx) = list.last(xs)
-  let lx = minx
-  let rx = warehouse.width - maxx - 1
+    |> list.first
   let assert Ok(point) = box.locations |> set.to_list |> list.first
-  case lx < rx {
-    True -> compute_gps(Point(lx, point.y))
-    False -> compute_gps(Point(rx, point.y))
-  }
+  compute_gps(Point(x: x, y: point.y))
 }
 
 fn render_warehouse(warehouse: Warehouse) -> String {
@@ -245,16 +273,12 @@ fn render_warehouse(warehouse: Warehouse) -> String {
 }
 
 pub fn main() {
-  let path = "input0.txt"
+  let path = "input.txt"
   let assert Ok(data) = simplifile.read(path)
   let warehouse = parse_input(data)
-  io.debug(warehouse)
-  io.println(render_warehouse(warehouse))
   let finished = follow_all_instructions(warehouse)
   let total =
-    set.fold(finished.boxes, 0, fn(total, box) {
-      total + compute_box_gps(finished, box)
-    })
+    set.fold(finished.boxes, 0, fn(total, box) { total + compute_box_gps(box) })
   io.println(int.to_string(total))
   io.println("Done")
 }
