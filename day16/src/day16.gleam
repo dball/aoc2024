@@ -103,7 +103,7 @@ type Path {
     head: Point,
     facing: Direction,
     cost_from_start: Int,
-    estimated_total_cost: Int,
+    estimated_remaining_cost: Int,
   )
 }
 
@@ -129,25 +129,30 @@ fn find_cheapest_solution(maze: Maze) -> Option(Path) {
       0,
       cheapest_cost_between(grid.E, maze.start, maze.end),
     )
-  find_cheapest_solution_loop(maze, dict.new() |> dict.insert(maze.start, path))
+  find_cheapest_solution_loop(
+    maze,
+    dict.new() |> dict.insert(#(maze.start, grid.E), path),
+  )
+}
+
+fn estimate_remaining_cost(path: Path) -> Int {
+  path.cost_from_start + path.estimated_remaining_cost
 }
 
 fn find_cheapest_solution_loop(
   maze: Maze,
-  potentials: Dict(Point, Path),
+  potentials: Dict(#(Point, Direction), Path),
 ) -> Option(Path) {
   let sorted =
     potentials
     |> dict.to_list
     |> list.sort(fn(a, b) {
-      int.compare({ a.1 }.estimated_total_cost, { b.1 }.estimated_total_cost)
+      int.compare(estimate_remaining_cost(a.1), estimate_remaining_cost(b.1))
     })
-  io.debug(#("sorted", sorted))
   case sorted {
     [] -> None
     [#(_, path), ..] if path.head == maze.end -> Some(path)
     [#(_, path), ..rest] -> {
-      io.debug(#("visiting", path))
       [
         {
           let point = grid.project(path.head, path.facing)
@@ -181,14 +186,14 @@ fn find_cheapest_solution_loop(
       ]
       |> list.filter(fn(path) { grid.has_contents(maze.rooms, path.head) })
       |> list.fold(rest |> dict.from_list, fn(potentials, path) {
-        case dict.get(potentials, path.head) {
+        case dict.get(potentials, #(path.head, path.facing)) {
           Ok(path2) -> {
             case path.cost_from_start < path2.cost_from_start {
-              True -> dict.insert(potentials, path.head, path)
+              True -> dict.insert(potentials, #(path.head, path.facing), path)
               False -> potentials
             }
           }
-          Error(_) -> dict.insert(potentials, path.head, path)
+          Error(_) -> dict.insert(potentials, #(path.head, path.facing), path)
         }
       })
       |> find_cheapest_solution_loop(maze, _)
