@@ -66,6 +66,125 @@ fn render_maze(maze: Maze) -> String {
   })
 }
 
+/// If the point is a hall with only one neighbor, this returns
+/// that neighbor's point.
+fn deadend_neighbor(maze: Maze, point: Point) -> Option(Point) {
+  case grid.get_content(maze.rooms, point) {
+    Some(Hall) -> {
+      let rooms = grid.get_neighboring_contents(maze.rooms, point)
+      case rooms {
+        [neighbor] -> Some(neighbor.0)
+        _ -> None
+      }
+    }
+    _ -> None
+  }
+}
+
+/// Returns the list of all deadends in the maze.
+fn find_deadends(maze: Maze) -> List(Point) {
+  maze.rooms
+  |> dict.keys
+  |> list.filter(fn(point) { deadend_neighbor(maze, point) |> option.is_some })
+}
+
+/// Fills in the point if it is a deadend, and recurses to the neighbor.
+fn fill_deadend(maze: Maze, point: Point) -> Maze {
+  case deadend_neighbor(maze, point) {
+    Some(neighbor) -> {
+      let maze = Maze(..maze, rooms: dict.delete(maze.rooms, point))
+      fill_deadend(maze, neighbor)
+    }
+    _ -> {
+      maze
+    }
+  }
+}
+
+fn fill_deadends(maze: Maze) -> Maze {
+  find_deadends(maze)
+  |> list.fold(maze, fn(maze, deadend) { fill_deadend(maze, deadend) })
+}
+
+type Path2 {
+  Path2(
+    head: Point,
+    facing: Direction,
+    cost_from_start: Int,
+    estimated_total_cost: Int,
+  )
+}
+
+// TODO also facing for a
+fn cheapest_cost_between(a: Point, b: Point) -> Int {
+  let dx = int.absolute_value(a.x - b.x)
+  let dy = int.absolute_value(a.y - b.y)
+  case dx, dy {
+    0, y -> y
+    x, 0 -> x
+    x, y -> x + y + 1000
+  }
+}
+
+fn find_cheapest_solution(maze: Maze) -> Option(Path2) {
+  let path =
+    Path2(maze.start, grid.E, 0, cheapest_cost_between(maze.start, maze.end))
+  find_cheapest_solution_loop(maze, [path])
+}
+
+fn find_cheapest_solution_loop(
+  maze: Maze,
+  potentials: List(Path2),
+) -> Option(Path2) {
+  let sorted =
+    potentials
+    |> list.sort(fn(a, b) {
+      int.compare(a.estimated_total_cost, b.estimated_total_cost)
+    })
+  case sorted {
+    [] -> None
+    [path, ..] if path.head == maze.end -> Some(path)
+    [path, ..rest] -> {
+      let neighbors =
+        [
+          {
+            let point = grid.project(path.head, path.facing)
+            Path2(
+              point,
+              path.facing,
+              path.cost_from_start + 1,
+              cheapest_cost_between(point, maze.end),
+            )
+          },
+          {
+            let facing = grid.turn(path.facing, grid.Left)
+            let point = grid.project(path.head, facing)
+            Path2(
+              point,
+              facing,
+              path.cost_from_start + 1001,
+              cheapest_cost_between(point, maze.end),
+            )
+          },
+          {
+            let facing = grid.turn(path.facing, grid.Right)
+            let point = grid.project(path.head, facing)
+            Path2(
+              point,
+              facing,
+              path.cost_from_start + 1001,
+              cheapest_cost_between(point, maze.end),
+            )
+          },
+        ]
+        |> list.filter(fn(path) { grid.has_contents(maze.rooms, path.head) })
+      // TODO Concat rest and neighbors, removing for each point+facing all but the
+      // cheapest cost_from_start
+      find_cheapest_solution_loop(maze, list.flatten([neighbors, rest]))
+    }
+  }
+}
+
 type Path {
   Path(
     start: Point,
@@ -153,55 +272,16 @@ fn compute_score(path: Path) -> Int {
   list.map(path.moves, move_score) |> list.fold(0, int.add)
 }
 
-/// If the point is a hall with only one neighbor, this returns
-/// that neighbor's point.
-fn deadend_neighbor(maze: Maze, point: Point) -> Option(Point) {
-  case grid.get_content(maze.rooms, point) {
-    Some(Hall) -> {
-      let rooms = grid.get_neighboring_contents(maze.rooms, point)
-      case rooms {
-        [neighbor] -> Some(neighbor.0)
-        _ -> None
-      }
-    }
-    _ -> None
-  }
-}
-
-/// Returns the list of all deadends in the maze.
-fn find_deadends(maze: Maze) -> List(Point) {
-  maze.rooms
-  |> dict.keys
-  |> list.filter(fn(point) { deadend_neighbor(maze, point) |> option.is_some })
-}
-
-/// Fills in the point if it is a deadend, and recurses to the neighbor.
-fn fill_deadend(maze: Maze, point: Point) -> Maze {
-  case deadend_neighbor(maze, point) {
-    Some(neighbor) -> {
-      let maze = Maze(..maze, rooms: dict.delete(maze.rooms, point))
-      fill_deadend(maze, neighbor)
-    }
-    _ -> {
-      maze
-    }
-  }
-}
-
-fn fill_deadends(maze: Maze) -> Maze {
-  find_deadends(maze)
-  |> list.fold(maze, fn(maze, deadend) { fill_deadend(maze, deadend) })
-}
-
 pub fn main() {
-  let path = "input.txt"
+  let path = "input0.txt"
   let assert Ok(data) = simplifile.read(path)
   let maze = parse_input(data)
   io.println(render_maze(maze))
   let maze = fill_deadends(maze)
   io.println(render_maze(maze))
-  io.debug(find_deadends(maze))
+  io.debug(find_cheapest_solution(maze))
   //let solutions = find_solutions(maze)
   //let min = solutions |> list.map(compute_score) |> list.fold(-1, int.min)
   //io.println(int.to_string(min))
+  io.println("Done")
 }
