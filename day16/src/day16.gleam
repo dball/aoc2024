@@ -3,16 +3,8 @@ import gleam/int
 import gleam/io
 import gleam/list
 import gleam/option.{type Option, None, Some}
-import gleam/set.{type Set}
-import gleam/string
 import grid.{type Direction, type Point, Point}
 import simplifile
-
-type Move {
-  Forward
-  TurnLeft
-  TurnRight
-}
 
 type Room {
   Start
@@ -106,8 +98,8 @@ fn fill_deadends(maze: Maze) -> Maze {
   |> list.fold(maze, fn(maze, deadend) { fill_deadend(maze, deadend) })
 }
 
-type Path2 {
-  Path2(
+type Path {
+  Path(
     head: Point,
     facing: Direction,
     cost_from_start: Int,
@@ -115,161 +107,95 @@ type Path2 {
   )
 }
 
-// TODO also facing for a
-fn cheapest_cost_between(a: Point, b: Point) -> Int {
-  let dx = int.absolute_value(a.x - b.x)
-  let dy = int.absolute_value(a.y - b.y)
-  case dx, dy {
-    0, y -> y
-    x, 0 -> x
-    x, y -> x + y + 1000
+fn cheapest_cost_between(facing: Direction, a: Point, b: Point) -> Int {
+  let d = Point(b.x - a.x, b.y - a.y)
+  let turns = case facing, d.x, d.y {
+    _, 0, 0 -> 0
+    grid.E, 0, _ | grid.W, 0, _ | grid.N, _, 0 | grid.S, _, 0 -> 1
+    grid.E, dx, 0 if dx > 0 -> 0
+    grid.W, dx, 0 if dx < 0 -> 0
+    grid.N, 0, dy if dy < 0 -> 0
+    grid.S, 0, dy if dy > 0 -> 0
+    _, _, _ -> 2
   }
+  turns * 1000 + int.absolute_value(d.x) + int.absolute_value(d.y)
 }
 
-fn find_cheapest_solution(maze: Maze) -> Option(Path2) {
+fn find_cheapest_solution(maze: Maze) -> Option(Path) {
   let path =
-    Path2(maze.start, grid.E, 0, cheapest_cost_between(maze.start, maze.end))
-  find_cheapest_solution_loop(maze, [path])
+    Path(
+      maze.start,
+      grid.E,
+      0,
+      cheapest_cost_between(grid.E, maze.start, maze.end),
+    )
+  find_cheapest_solution_loop(
+    maze,
+    dict.new() |> dict.insert(#(maze.start, grid.E), path),
+  )
 }
 
 fn find_cheapest_solution_loop(
   maze: Maze,
-  potentials: List(Path2),
-) -> Option(Path2) {
+  potentials: Dict(#(Point, Direction), Path),
+) -> Option(Path) {
   let sorted =
     potentials
+    |> dict.to_list
     |> list.sort(fn(a, b) {
-      int.compare(a.estimated_total_cost, b.estimated_total_cost)
+      int.compare({ a.1 }.estimated_total_cost, { b.1 }.estimated_total_cost)
     })
   case sorted {
     [] -> None
-    [path, ..] if path.head == maze.end -> Some(path)
-    [path, ..rest] -> {
-      let neighbors =
-        [
-          {
-            let point = grid.project(path.head, path.facing)
-            Path2(
-              point,
-              path.facing,
-              path.cost_from_start + 1,
-              cheapest_cost_between(point, maze.end),
-            )
-          },
-          {
-            let facing = grid.turn(path.facing, grid.Left)
-            let point = grid.project(path.head, facing)
-            Path2(
-              point,
-              facing,
-              path.cost_from_start + 1001,
-              cheapest_cost_between(point, maze.end),
-            )
-          },
-          {
-            let facing = grid.turn(path.facing, grid.Right)
-            let point = grid.project(path.head, facing)
-            Path2(
-              point,
-              facing,
-              path.cost_from_start + 1001,
-              cheapest_cost_between(point, maze.end),
-            )
-          },
-        ]
-        |> list.filter(fn(path) { grid.has_contents(maze.rooms, path.head) })
-      // TODO Concat rest and neighbors, removing for each point+facing all but the
-      // cheapest cost_from_start
-      find_cheapest_solution_loop(maze, list.flatten([neighbors, rest]))
-    }
-  }
-}
-
-type Path {
-  Path(
-    start: Point,
-    end: Point,
-    facing: Direction,
-    moves: List(Move),
-    visits: Set(Point),
-  )
-}
-
-fn extend_path(maze: Maze, path: Path, point: Point) -> Option(Path) {
-  let is_room = grid.has_contents(maze.rooms, point)
-  case is_room && !set.contains(path.visits, point) {
-    True ->
-      Some(Path(..path, end: point, visits: set.insert(path.visits, point)))
-    False -> None
-  }
-}
-
-fn find_solutions_starting_with(maze: Maze, path: Path) -> List(Path) {
-  case path.end == maze.end {
-    True -> [path]
-    False -> {
-      let moves = [Forward, TurnLeft, TurnRight]
-      let next_paths =
-        list.fold(moves, [], fn(paths, move) {
-          case move {
-            Forward -> {
-              let next_point = grid.project(path.end, path.facing)
-              case extend_path(maze, path, next_point) {
-                None -> paths
-                Some(path) -> [
-                  Path(..path, moves: [move, ..path.moves]),
-                  ..paths
-                ]
-              }
-            }
-            TurnLeft | TurnRight -> {
-              let turn = case move {
-                TurnLeft -> grid.Left
-                _ -> grid.Right
-              }
-              let next_facing = grid.turn(path.facing, turn)
-              let next_point = grid.project(path.end, next_facing)
-              case extend_path(maze, path, next_point) {
-                None -> paths
-                Some(path) -> [
-                  Path(
-                    ..path,
-                    facing: next_facing,
-                    moves: [Forward, move, ..path.moves],
-                  ),
-                  ..paths
-                ]
-              }
+    [#(_, path), ..] if path.head == maze.end -> Some(path)
+    [#(_, path), ..rest] -> {
+      io.debug(#("visiting", path))
+      [
+        {
+          let point = grid.project(path.head, path.facing)
+          Path(
+            point,
+            path.facing,
+            path.cost_from_start + 1,
+            cheapest_cost_between(path.facing, point, maze.end),
+          )
+        },
+        {
+          let facing = grid.turn(path.facing, grid.Left)
+          let point = grid.project(path.head, facing)
+          Path(
+            point,
+            facing,
+            path.cost_from_start + 1001,
+            cheapest_cost_between(facing, point, maze.end),
+          )
+        },
+        {
+          let facing = grid.turn(path.facing, grid.Right)
+          let point = grid.project(path.head, facing)
+          Path(
+            point,
+            facing,
+            path.cost_from_start + 1001,
+            cheapest_cost_between(facing, point, maze.end),
+          )
+        },
+      ]
+      |> list.filter(fn(path) { grid.has_contents(maze.rooms, path.head) })
+      |> list.fold(rest |> dict.from_list, fn(potentials, path) {
+        case dict.get(potentials, #(path.head, path.facing)) {
+          Ok(path2) -> {
+            case path.cost_from_start < path2.cost_from_start {
+              True -> dict.insert(potentials, #(path.head, path.facing), path)
+              False -> potentials
             }
           }
-        })
-      list.flat_map(next_paths, find_solutions_starting_with(maze, _))
+          Error(_) -> dict.insert(potentials, #(path.head, path.facing), path)
+        }
+      })
+      |> find_cheapest_solution_loop(maze, _)
     }
   }
-}
-
-fn find_solutions(maze: Maze) -> List(Path) {
-  let path =
-    Path(
-      start: maze.start,
-      end: maze.start,
-      facing: grid.E,
-      moves: [],
-      visits: set.new() |> set.insert(maze.start),
-    )
-  find_solutions_starting_with(maze, path)
-  |> list.map(fn(path) { Path(..path, moves: list.reverse(path.moves)) })
-}
-
-fn move_score(move: Move) {
-  case move {
-    Forward -> 1
-    _ -> 1000
-  }
-}
-
-fn compute_score(path: Path) -> Int {
-  list.map(path.moves, move_score) |> list.fold(0, int.add)
 }
 
 pub fn main() {
