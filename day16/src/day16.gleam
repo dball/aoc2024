@@ -129,15 +129,12 @@ fn find_cheapest_solution(maze: Maze) -> Option(Path) {
       0,
       cheapest_cost_between(grid.E, maze.start, maze.end),
     )
-  find_cheapest_solution_loop(
-    maze,
-    dict.new() |> dict.insert(#(maze.start, grid.E), path),
-  )
+  find_cheapest_solution_loop(maze, dict.new() |> dict.insert(maze.start, path))
 }
 
 fn find_cheapest_solution_loop(
   maze: Maze,
-  potentials: Dict(#(Point, Direction), Path),
+  potentials: Dict(Point, Path),
 ) -> Option(Path) {
   let sorted =
     potentials
@@ -145,6 +142,7 @@ fn find_cheapest_solution_loop(
     |> list.sort(fn(a, b) {
       int.compare({ a.1 }.estimated_total_cost, { b.1 }.estimated_total_cost)
     })
+  io.debug(#("sorted", sorted))
   case sorted {
     [] -> None
     [#(_, path), ..] if path.head == maze.end -> Some(path)
@@ -183,14 +181,14 @@ fn find_cheapest_solution_loop(
       ]
       |> list.filter(fn(path) { grid.has_contents(maze.rooms, path.head) })
       |> list.fold(rest |> dict.from_list, fn(potentials, path) {
-        case dict.get(potentials, #(path.head, path.facing)) {
+        case dict.get(potentials, path.head) {
           Ok(path2) -> {
             case path.cost_from_start < path2.cost_from_start {
-              True -> dict.insert(potentials, #(path.head, path.facing), path)
+              True -> dict.insert(potentials, path.head, path)
               False -> potentials
             }
           }
-          Error(_) -> dict.insert(potentials, #(path.head, path.facing), path)
+          Error(_) -> dict.insert(potentials, path.head, path)
         }
       })
       |> find_cheapest_solution_loop(maze, _)
