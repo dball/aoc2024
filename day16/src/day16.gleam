@@ -202,7 +202,7 @@ fn find_cheapest_solution_loop(
 }
 
 pub fn main() {
-  let path = "input0.txt"
+  let path = "input.txt"
   let assert Ok(data) = simplifile.read(path)
   let maze = parse_input(data)
   io.println(render_maze(maze))
