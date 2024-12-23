@@ -1,10 +1,14 @@
+import edn
 import gleam/dict.{type Dict}
 import gleam/int
 import gleam/io
 import gleam/list
 import gleam/option.{type Option, None, Some}
+import gleam/set
 import grid.{type Direction, type Point, Point}
 import simplifile
+import wgraph
+import wgraph2
 
 type Room {
   Start
@@ -98,6 +102,7 @@ fn fill_deadends(maze: Maze) -> Maze {
   |> list.fold(maze, fn(maze, deadend) { fill_deadend(maze, deadend) })
 }
 
+// TODO accumulate the set of points visited
 type Path {
   Path(
     head: Point,
@@ -121,7 +126,11 @@ fn cheapest_cost_between(facing: Direction, a: Point, b: Point) -> Int {
   turns * 1000 + int.absolute_value(d.x) + int.absolute_value(d.y)
 }
 
-fn find_cheapest_solution(maze: Maze) -> Option(Path) {
+fn estimate_total_cost(path: Path) -> Int {
+  path.cost_from_start + path.estimated_remaining_cost
+}
+
+fn find_cheapest_solutions(maze: Maze) -> List(Path) {
   let path =
     Path(
       maze.start,
@@ -129,30 +138,61 @@ fn find_cheapest_solution(maze: Maze) -> Option(Path) {
       0,
       cheapest_cost_between(grid.E, maze.start, maze.end),
     )
-  find_cheapest_solution_loop(
+  find_cheapest_solutions_loop(
     maze,
     dict.new() |> dict.insert(#(maze.start, grid.E), path),
+    [],
   )
 }
 
-fn estimate_remaining_cost(path: Path) -> Int {
-  path.cost_from_start + path.estimated_remaining_cost
-}
-
-fn find_cheapest_solution_loop(
+// TODO accumulate all instances of the cheapest solutions
+fn find_cheapest_solutions_loop(
   maze: Maze,
   potentials: Dict(#(Point, Direction), Path),
-) -> Option(Path) {
+  cheapests: List(Path),
+) -> List(Path) {
+  // TODO if we have any cheapests, discard anything projected to be more expensive
   let sorted =
     potentials
     |> dict.to_list
+    |> list.filter(fn(entry) {
+      let #(_, path) = entry
+      case cheapests |> list.first {
+        Ok(cheapest) -> {
+          io.debug(#("cheapest", cheapest, "other", path))
+          path.cost_from_start <= cheapest.cost_from_start
+        }
+        Error(_) -> True
+      }
+    })
     |> list.sort(fn(a, b) {
-      int.compare(estimate_remaining_cost(a.1), estimate_remaining_cost(b.1))
+      int.compare(estimate_total_cost(a.1), estimate_total_cost(b.1))
     })
   case sorted {
-    [] -> None
-    [#(_, path), ..] if path.head == maze.end -> Some(path)
+    [] -> cheapests
+    [#(_, path), ..rest] if path.head == maze.end -> {
+      let next_cheapests = case cheapests {
+        [] -> {
+          io.debug(#("found first cheapest", path))
+          [path]
+        }
+        [cheapest, ..] if path.cost_from_start < cheapest.cost_from_start -> {
+          io.debug(#("found new cheapest", path))
+          [path]
+        }
+        [cheapest, ..] if path.cost_from_start == cheapest.cost_from_start -> {
+          io.debug(#("found equal cheapest", path))
+          [path, ..cheapests]
+        }
+        _ -> {
+          io.debug(#("ugh found weird cheapest", path))
+          cheapests
+        }
+      }
+      find_cheapest_solutions_loop(maze, rest |> dict.from_list, next_cheapests)
+    }
     [#(_, path), ..rest] -> {
+      io.debug(#("visit", path))
       [
         {
           let point = grid.project(path.head, path.facing)
@@ -196,21 +236,140 @@ fn find_cheapest_solution_loop(
           Error(_) -> dict.insert(potentials, #(path.head, path.facing), path)
         }
       })
-      |> find_cheapest_solution_loop(maze, _)
+      |> find_cheapest_solutions_loop(maze, _, cheapests)
     }
   }
+}
+
+fn build_graph(maze: Maze) -> wgraph.Graph(#(Point, Direction)) {
+  let graph =
+    dict.fold(maze.rooms, wgraph.Graph(nodes: dict.new()), fn(graph, point, _) {
+      list.fold(grid.directions, graph, fn(graph, direction) {
+        wgraph.Graph(nodes: dict.insert(
+          graph.nodes,
+          #(point, direction),
+          wgraph.Node(edges: set.new()),
+        ))
+      })
+    })
+  dict.fold(maze.rooms, graph, fn(graph, point, _) {
+    let neighbors =
+      list.fold(grid.directions, dict.new(), fn(neighbors, direction) {
+        let neighbor = grid.project(point, direction)
+        case grid.get_content(maze.rooms, neighbor) {
+          Some(_) -> dict.insert(neighbors, direction, neighbor)
+          None -> neighbors
+        }
+      })
+    list.fold(grid.directions, graph, fn(graph, to) {
+      case dict.get(neighbors, to) {
+        Ok(dest) -> {
+          list.fold(grid.directions, graph, fn(graph, from) {
+            let weight = case from == to {
+              True -> 1
+              False -> {
+                case from == grid.opposite(to) {
+                  True -> 0
+                  False -> 1001
+                }
+              }
+            }
+            case weight {
+              0 -> graph
+              _ -> {
+                let from_ident = #(point, from)
+                let to_ident = #(dest, grid.opposite(to))
+                let edge = wgraph.Edge(to_ident, weight)
+                let node = dict.get(graph.nodes, from_ident)
+                case node {
+                  Ok(node) -> {
+                    let edges = set.insert(node.edges, edge)
+                    let node = wgraph.Node(edges)
+                    wgraph.Graph(dict.insert(graph.nodes, from_ident, node))
+                  }
+                  Error(_) -> graph
+                }
+              }
+            }
+          })
+        }
+        Error(_) -> graph
+      }
+    })
+  })
+}
+
+fn find_cheapest_graph_paths(maze: Maze) {
+  let graph = build_graph(maze)
+  let start = #(maze.start, grid.E)
+  let ends =
+    grid.directions
+    |> list.map(fn(direction) { #(maze.end, direction) })
+    |> set.from_list
+  let estimate_cost = fn(ident) {
+    let #(point, direction) = ident
+    cheapest_cost_between(direction, point, maze.end)
+  }
+  wgraph.find_cheapest_paths(graph, estimate_cost, start, ends)
+}
+
+fn build_wgraph2(maze: Maze) -> wgraph2.Graph(Point, Direction) {
+  wgraph2.Graph(get_edges_from: fn(src, facing) {
+    grid.directions
+    |> list.map(fn(direction) {
+      let dest = grid.project(src, direction)
+      let neighbor = grid.get_content(maze.rooms, dest)
+      #(direction, dest, neighbor)
+    })
+    |> list.fold(dict.new(), fn(accum, entry) {
+      let #(direction, dest, neighbor) = entry
+      case neighbor {
+        Some(_) -> {
+          let weight = case facing == direction {
+            True -> Some(1)
+            False -> {
+              case facing == grid.opposite(direction) {
+                True -> None
+                False -> Some(1001)
+              }
+            }
+          }
+          case weight {
+            None -> accum
+            Some(weight) -> dict.insert(accum, direction, #(dest, weight))
+          }
+        }
+        None -> accum
+      }
+    })
+  })
+}
+
+fn find_cheapest_wgraph_paths(
+  maze: Maze,
+) -> List(wgraph2.Path(Point, Direction)) {
+  wgraph2.find_cheapest_paths(
+    build_wgraph2(maze),
+    fn(src, facing, dest) { cheapest_cost_between(facing, src, dest) },
+    #(maze.start, grid.E),
+    maze.end,
+  )
 }
 
 pub fn main() {
   let path = "input.txt"
   let assert Ok(data) = simplifile.read(path)
   let maze = parse_input(data)
-  io.println(render_maze(maze))
   let maze = fill_deadends(maze)
   io.println(render_maze(maze))
-  io.debug(find_cheapest_solution(maze))
-  //let solutions = find_solutions(maze)
-  //let min = solutions |> list.map(compute_score) |> list.fold(-1, int.min)
-  //io.println(int.to_string(min))
+  let solutions = find_cheapest_wgraph_paths(maze)
+  solutions
+  |> list.map(fn(solution) { edn.debug(list.first(solution)) })
+  let best_seats =
+    list.flat_map(solutions, fn(solution) {
+      list.map(solution, fn(visit) { visit.node })
+    })
+    |> set.from_list
+  edn.debug(set.size(best_seats))
   io.println("Done")
 }

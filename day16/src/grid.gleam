@@ -15,6 +15,8 @@ pub type Direction {
   W
 }
 
+pub const directions = [N, E, S, W]
+
 pub type Turn {
   Left
   Right
@@ -30,6 +32,15 @@ pub fn turn(direction: Direction, turn: Turn) -> Direction {
     S, Right -> W
     W, Left -> S
     W, Right -> N
+  }
+}
+
+pub fn opposite(direction: Direction) -> Direction {
+  case direction {
+    N -> S
+    S -> N
+    E -> W
+    W -> E
   }
 }
 
