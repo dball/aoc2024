@@ -1,3 +1,4 @@
+import djk
 import edn
 import gleam/dict.{type Dict}
 import gleam/int
@@ -159,14 +160,57 @@ fn find_cheapest_wgraph_paths(maze: Maze) -> List(wgraph.Path(Point, Direction))
   )
 }
 
+fn build_djk_graph(maze: Maze) -> djk.Graph(#(Point, Direction), Nil) {
+  djk.Graph(
+    get_vertices: fn() {
+      maze.rooms.contents
+      |> dict.keys
+      |> list.flat_map(fn(point) {
+        grid.directions |> list.map(fn(direction) { #(point, direction) })
+      })
+    },
+    get_neighbors: fn(from) {
+      grid.directions
+      |> list.fold(dict.new(), fn(accum, direction) {
+        let #(src, facing) = from
+        let dst = grid.project(src, direction)
+        case grid.get_content(maze.rooms, dst) {
+          Some(_) -> {
+            let weight = case facing == direction {
+              True -> Some(1)
+              False ->
+                case facing == grid.opposite(direction) {
+                  True -> None
+                  False -> Some(1001)
+                }
+            }
+            case weight {
+              Some(weight) ->
+                accum |> dict.insert(#(dst, direction), #(Nil, weight))
+              None -> accum
+            }
+          }
+          None -> accum
+        }
+      })
+    },
+  )
+}
+
+fn find_djk_path(maze: Maze) {
+  let graph = build_djk_graph(maze)
+  grid.directions
+  |> list.map(fn(direction) {
+    djk.find_shortest_path(graph, #(maze.start, grid.E), #(maze.end, direction))
+  })
+}
+
 pub fn main() {
-  let path = "input.txt"
+  let path = "input0.txt"
   let assert Ok(data) = simplifile.read(path)
   let maze = parse_input(data)
   let maze = fill_deadends(maze)
   io.println(render_maze(maze))
-  let solutions = find_cheapest_wgraph_paths(maze)
-  edn.debug(list.length(solutions))
-  edn.debug(list.map(solutions, fn(solution) { solution.total_cost }))
+  edn.debug(find_djk_path(maze))
   io.println("Done")
 }
