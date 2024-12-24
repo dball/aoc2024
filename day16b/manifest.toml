@@ -7,6 +7,7 @@ packages = [
   { name = "glam", version = "2.0.1", build_tools = ["gleam"], requirements = ["gleam_stdlib"], otp_app = "glam", source = "hex", outer_checksum = "66EC3BCD632E51EED029678F8DF419659C1E57B1A93D874C5131FE220DFAD2B2" },
   { name = "gleam_json", version = "2.2.0", build_tools = ["gleam"], requirements = ["gleam_stdlib"], otp_app = "gleam_json", source = "hex", outer_checksum = "093214EB186A88D301795A94F0A8128C2E24CF1423997ED31A6C6CC67FC3E1A1" },
   { name = "gleam_stdlib", version = "0.51.0", build_tools = ["gleam"], requirements = [], otp_app = "gleam_stdlib", source = "hex", outer_checksum = "14AFA8D3DDD7045203D422715DBB822D1725992A31DF35A08D97389014B74B68" },
+  { name = "gleamy_structures", version = "1.1.0", build_tools = ["gleam"], requirements = ["gleam_stdlib"], otp_app = "gleamy_structures", source = "hex", outer_checksum = "49C957ACF9857BC76FE13AB8D9C39FF3F5EF5DE9229DB0D15D228865C645DA66" },
   { name = "gleeunit", version = "1.2.0", build_tools = ["gleam"], requirements = ["gleam_stdlib"], otp_app = "gleeunit", source = "hex", outer_checksum = "F7A7228925D3EE7D0813C922E062BFD6D7E9310F0BEE585D3A42F3307E3CFD13" },
   { name = "pprint", version = "1.0.4", build_tools = ["gleam"], requirements = ["glam", "gleam_stdlib"], otp_app = "pprint", source = "hex", outer_checksum = "C310A98BDC0995644847C3C8702DE19656D6BCD638B2A8A358B97824379ECAA1" },
   { name = "priorityq", version = "0.1.0", build_tools = ["gleam"], requirements = ["gleam_stdlib"], otp_app = "priorityq", source = "hex", outer_checksum = "979D1654394E48CCB1F2758F4783ED1E36274F007CCC6A8C1BB5D2492889102D" },
@@ -16,6 +17,7 @@ packages = [
 [requirements]
 edn = { path = "../../gleam/edn" }
 gleam_stdlib = { version = ">= 0.34.0 and < 2.0.0" }
+gleamy_structures = { version = ">= 1.1.0 and < 2.0.0" }
 gleeunit = { version = ">= 1.0.0 and < 2.0.0" }
 priorityq = { version = ">= 0.1.0 and < 1.0.0" }
 simplifile = { version = ">= 2.2.0 and < 3.0.0" }
