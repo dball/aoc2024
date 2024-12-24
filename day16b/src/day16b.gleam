@@ -166,7 +166,8 @@ fn build_djk_graph(maze: Maze) -> djk.Graph(#(Point, Direction), Nil) {
       maze.rooms.contents
       |> dict.keys
       |> list.flat_map(fn(point) {
-        grid.directions |> list.map(fn(direction) { #(point, direction) })
+        grid.directions
+        |> list.map(fn(direction) { #(point, direction) })
       })
     },
     get_neighbors: fn(from) {
@@ -206,11 +207,12 @@ fn find_djk_path(maze: Maze) {
 }
 
 pub fn main() {
-  let path = "input0.txt"
+  let path = "input.txt"
   let assert Ok(data) = simplifile.read(path)
   let maze = parse_input(data)
   let maze = fill_deadends(maze)
   io.println(render_maze(maze))
-  edn.debug(find_djk_path(maze))
+  find_djk_path(maze)
+  |> list.each(fn(path) { edn.debug(path) })
   io.println("Done")
 }

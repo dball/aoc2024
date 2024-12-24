@@ -1,6 +1,8 @@
+import edn
 import gleam/dict.{type Dict}
 import gleam/int
 import gleam/list
+import gleam/option.{type Option, None, Some}
 import gleam/order
 import gleam/result
 import gleam/set.{type Set}
@@ -20,35 +22,42 @@ pub fn find_shortest_path(
   graph: Graph(vertex, edge),
   start: vertex,
   end: vertex,
-) -> List(vertex) {
+) -> Option(Path(vertex, edge)) {
   let q = graph.get_vertices() |> set.from_list
   let dist = dict.new() |> dict.insert(start, 0)
   let prev = dict.new()
-  let #(_dist, prev) = compute_dist_prev(graph, dist, prev, q)
-  compute_shortest_path(prev, start, [end])
+  let #(dist, prev) = compute_dist_prev(graph, dist, prev, q)
+  compute_shortest_path(prev, start, Path(end, [], 0))
 }
 
 fn compute_shortest_path(
-  prev: Dict(vertex, vertex),
+  prev: Dict(vertex, #(vertex, edge, Int)),
   start: vertex,
-  path: List(vertex),
-) -> List(vertex) {
-  case path {
-    [head, ..] if head == start -> path
-    [head, ..] -> {
-      case dict.get(prev, head) {
-        Ok(head) -> compute_shortest_path(prev, start, [head, ..path])
-        Error(_) -> []
+  path: Path(vertex, edge),
+) -> Option(Path(vertex, edge)) {
+  case path.head == start {
+    True -> Some(path)
+    False -> {
+      case dict.get(prev, path.head) {
+        Ok(#(head, edge, weight)) -> {
+          let path =
+            Path(
+              head: head,
+              tail: [#(path.head, edge), ..path.tail],
+              cost: weight + path.cost,
+            )
+          compute_shortest_path(prev, start, path)
+        }
+        Error(_) -> None
       }
     }
-    [] -> []
   }
 }
 
 fn compute_dist_prev(
   graph: Graph(vertex, edge),
   dist: Dict(vertex, Int),
-  prev: Dict(vertex, vertex),
+  prev: Dict(vertex, #(vertex, edge, Int)),
   q: Set(vertex),
 ) {
   let u =
@@ -77,16 +86,20 @@ fn compute_dist_prev(
       let #(dist, prev) =
         list.fold(neighbors, #(dist, prev), fn(accum, entry) {
           let #(dist, prev) = accum
-          let #(v, #(_edge, weight)) = entry
-          let assert Ok(dist_u) = dict.get(dist, u)
-          let alt = dist_u + weight
-          let dist_v = dict.get(dist, v)
-          case int.compare(alt, result.unwrap(dist_v, alt + 1)) {
-            order.Lt -> #(
-              dist |> dict.insert(v, alt),
-              prev |> dict.insert(v, u),
-            )
-            _ -> #(dist, prev)
+          let #(v, #(edge, weight)) = entry
+          case dict.get(dist, u) {
+            Ok(dist_u) -> {
+              let alt = dist_u + weight
+              let dist_v = dict.get(dist, v)
+              case int.compare(alt, result.unwrap(dist_v, alt + 1)) {
+                order.Lt -> #(
+                  dist |> dict.insert(v, alt),
+                  prev |> dict.insert(v, #(u, edge, weight)),
+                )
+                _ -> #(dist, prev)
+              }
+            }
+            Error(_) -> #(dist, prev)
           }
         })
       compute_dist_prev(graph, dist, prev, q)
