@@ -5,22 +5,11 @@ import gleam/list
 import gleam/option.{type Option, None, Some}
 import gleam/order
 import gleam/result
-import gleam/set.{type Set}
 import gleamy/priority_queue as pq
 
-/// Orders the weights from smallest to largest, treating None as positive infinity
-fn weight_compare(a: Option(Int), b: Option(Int)) -> order.Order {
-  case a, b {
-    None, None -> order.Eq
-    Some(_), None -> order.Lt
-    None, Some(_) -> order.Gt
-    Some(a), Some(b) -> int.compare(a, b)
-  }
-}
-
-/// Orders the vertices from largest weight to smallest weight
+/// Orders the vertices from least weight to greatest weight
 fn vertex_compare(a: #(vertex, Int), b: #(vertex, Int)) -> order.Order {
-  int.compare(b.1, a.1)
+  int.compare(a.1, b.1)
 }
 
 fn build_queue(init: vertex) -> pq.Queue(#(vertex, Int)) {
@@ -46,7 +35,8 @@ pub fn find_shortest_path(
   let q = build_queue(start)
   let dist = dict.new() |> dict.insert(start, 0)
   let prev = dict.new()
-  let #(dist, prev) = compute_dist_prev(graph, dist, prev, q)
+  edn.debug("compute")
+  let #(_dist, prev) = compute_dist_prev_until(graph, end, dist, prev, q)
   compute_shortest_path(prev, start, Path(end, [], 0))
 }
 
@@ -74,13 +64,17 @@ fn compute_shortest_path(
   }
 }
 
-fn compute_dist_prev(
+fn compute_dist_prev_until(
   graph: Graph(vertex, edge),
+  end: vertex,
   dist: Dict(vertex, Int),
   prev: Dict(vertex, #(vertex, edge, Int)),
   q: pq.Queue(#(vertex, Int)),
 ) {
   case pq.pop(q) {
+    Ok(#(#(u, _), _)) if u == end -> {
+      #(dist, prev)
+    }
     Ok(#(#(u, _), q)) -> {
       let neighbors = graph.get_neighbors(u) |> dict.to_list
       let #(dist, prev, q) =
@@ -105,7 +99,7 @@ fn compute_dist_prev(
             Error(_) -> #(dist, prev, q)
           }
         })
-      compute_dist_prev(graph, dist, prev, q)
+      compute_dist_prev_until(graph, end, dist, prev, q)
     }
     Error(_) -> #(dist, prev)
   }
