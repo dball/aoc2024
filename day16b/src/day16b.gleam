@@ -200,10 +200,12 @@ fn build_djk_graph(maze: Maze) -> djk.Graph(#(Point, Direction), Nil) {
 
 fn find_djk_path(maze: Maze) {
   let graph = build_djk_graph(maze)
-  grid.directions
-  |> list.map(fn(direction) {
-    djk.find_shortest_path(graph, #(maze.start, grid.E), #(maze.end, direction))
-  })
+  let ends =
+    grid.directions
+    |> list.map(fn(direction) { #(maze.end, direction) })
+    |> set.from_list
+  let start = #(maze.start, grid.E)
+  djk.find_shortest_path(graph, start, ends)
 }
 
 pub fn main() {
@@ -212,18 +214,7 @@ pub fn main() {
   let maze = parse_input(data)
   let maze = fill_deadends(maze)
   io.println(render_maze(maze))
-  find_djk_path(maze)
-  |> list.each(fn(path) {
-    case path {
-      Some(path) -> {
-        edn.debug(path.cost)
-        Nil
-      }
-      None -> {
-        edn.debug(Nil)
-        Nil
-      }
-    }
-  })
+  let assert Some(path) = find_djk_path(maze)
+  edn.debug(path.cost)
   io.println("Done")
 }

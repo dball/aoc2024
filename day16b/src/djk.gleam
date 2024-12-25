@@ -39,14 +39,27 @@ fn path_compare(a: Path(vertex, edge), b: Path(vertex, edge)) -> order.Order {
 pub fn find_shortest_path(
   graph: Graph(vertex, edge),
   start: vertex,
-  end: vertex,
+  ends: Set(vertex),
 ) -> Option(Path(vertex, edge)) {
   let q = pq.new(vertex_compare) |> pq.push(#(start, 0))
   let dist = dict.new() |> dict.insert(start, 0)
   let prev = dict.new()
-  let ends = set.new() |> set.insert(end)
   let #(_dist, prev) = compute_dist_prev_until(graph, ends, dist, prev, q)
-  compute_shortest_path(prev, start, Path(end, [], 0))
+  let shortest_path =
+    ends
+    |> set.to_list
+    |> list.map(fn(end) { compute_shortest_path(prev, start, Path(end, [], 0)) })
+    |> list.fold([], fn(accum, path) {
+      case path {
+        Some(path) -> [path, ..accum]
+        None -> accum
+      }
+    })
+    |> list.max(order.reverse(path_compare))
+  case shortest_path {
+    Ok(shortest_path) -> Some(shortest_path)
+    Error(_) -> None
+  }
 }
 
 fn compute_shortest_path(
