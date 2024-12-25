@@ -5,6 +5,7 @@ import gleam/list
 import gleam/option.{type Option, None, Some}
 import gleam/order
 import gleam/result
+import gleam/set.{type Set}
 import gleamy/priority_queue as pq
 
 /// Orders the vertices from least weight to greatest weight
@@ -27,6 +28,13 @@ pub type Path(vertex, edge) {
   Path(head: vertex, tail: List(#(vertex, edge)), cost: Int)
 }
 
+fn path_compare(a: Path(vertex, edge), b: Path(vertex, edge)) -> order.Order {
+  order.break_tie(
+    int.compare(a.cost, b.cost),
+    int.compare(list.length(a.tail), list.length(b.tail)),
+  )
+}
+
 /// Returns a shortest path from the start to the end, if there is at least one.
 pub fn find_shortest_path(
   graph: Graph(vertex, edge),
@@ -36,8 +44,8 @@ pub fn find_shortest_path(
   let q = pq.new(vertex_compare) |> pq.push(#(start, 0))
   let dist = dict.new() |> dict.insert(start, 0)
   let prev = dict.new()
-  edn.debug("compute")
-  let #(_dist, prev) = compute_dist_prev_until(graph, end, dist, prev, q)
+  let ends = set.new() |> set.insert(end)
+  let #(_dist, prev) = compute_dist_prev_until(graph, ends, dist, prev, q)
   compute_shortest_path(prev, start, Path(end, [], 0))
 }
 
@@ -65,43 +73,50 @@ fn compute_shortest_path(
   }
 }
 
+// TODO allow set of prev values for a key (multiple ways to arrive at the index vertex)
 fn compute_dist_prev_until(
   graph: Graph(vertex, edge),
-  end: vertex,
+  ends: Set(vertex),
   dist: Dict(vertex, Int),
   prev: Dict(vertex, #(vertex, edge, Int)),
   q: pq.Queue(#(vertex, Int)),
 ) {
-  case pq.pop(q) {
-    Ok(#(#(u, _), _)) if u == end -> {
-      #(dist, prev)
-    }
-    Ok(#(#(u, _), q)) -> {
-      let neighbors = graph.get_neighbors(u) |> dict.to_list
-      let #(dist, prev, q) =
-        list.fold(neighbors, #(dist, prev, q), fn(accum, entry) {
-          let #(dist, prev, q) = accum
-          let #(v, #(edge, weight)) = entry
-          case dict.get(dist, u) {
-            Ok(dist_u) -> {
-              let alt = dist_u + weight
-              let dist_v = dict.get(dist, v)
-              case int.compare(alt, result.unwrap(dist_v, alt + 1)) {
-                order.Lt -> {
-                  #(
-                    dist |> dict.insert(v, alt),
-                    prev |> dict.insert(v, #(u, edge, weight)),
-                    q |> pq.push(#(v, alt)),
-                  )
-                }
-                _ -> #(dist, prev, q)
-              }
-            }
-            Error(_) -> #(dist, prev, q)
+  case set.size(ends) {
+    0 -> #(dist, prev)
+    _ -> {
+      case pq.pop(q) {
+        Ok(#(#(u, _), q)) -> {
+          let ends = case set.contains(ends, u) {
+            True -> ends |> set.delete(u)
+            False -> ends
           }
-        })
-      compute_dist_prev_until(graph, end, dist, prev, q)
+          let neighbors = graph.get_neighbors(u) |> dict.to_list
+          let #(dist, prev, q) =
+            list.fold(neighbors, #(dist, prev, q), fn(accum, entry) {
+              let #(dist, prev, q) = accum
+              let #(v, #(edge, weight)) = entry
+              case dict.get(dist, u) {
+                Ok(dist_u) -> {
+                  let alt = dist_u + weight
+                  let dist_v = dict.get(dist, v)
+                  case int.compare(alt, result.unwrap(dist_v, alt + 1)) {
+                    order.Lt -> {
+                      #(
+                        dist |> dict.insert(v, alt),
+                        prev |> dict.insert(v, #(u, edge, weight)),
+                        q |> pq.push(#(v, alt)),
+                      )
+                    }
+                    _ -> #(dist, prev, q)
+                  }
+                }
+                Error(_) -> #(dist, prev, q)
+              }
+            })
+          compute_dist_prev_until(graph, ends, dist, prev, q)
+        }
+        Error(_) -> #(dist, prev)
+      }
     }
-    Error(_) -> #(dist, prev)
   }
 }

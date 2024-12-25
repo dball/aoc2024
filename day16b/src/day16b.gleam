@@ -213,6 +213,17 @@ pub fn main() {
   let maze = fill_deadends(maze)
   io.println(render_maze(maze))
   find_djk_path(maze)
-  |> list.each(fn(path) { edn.debug(path) })
+  |> list.each(fn(path) {
+    case path {
+      Some(path) -> {
+        edn.debug(path.cost)
+        Nil
+      }
+      None -> {
+        edn.debug(Nil)
+        Nil
+      }
+    }
+  })
   io.println("Done")
 }
