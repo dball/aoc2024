@@ -12,27 +12,28 @@ fn vertex_compare(a: #(vertex, Int), b: #(vertex, Int)) -> order.Order {
   int.compare(a.1, b.1)
 }
 
-fn build_queue(init: vertex) -> pq.Queue(#(vertex, Int)) {
-  pq.new(vertex_compare) |> pq.push(#(init, 0))
-}
-
+/// A graph links vertices via edges
 pub type Graph(vertex, edge) {
+  /// A graph is defined by a functional contract
   Graph(
     get_vertices: fn() -> List(vertex),
     get_neighbors: fn(vertex) -> Dict(vertex, #(edge, Int)),
   )
 }
 
+/// A path is a sequence of vertices linked by edges, with its cost the sum of
+/// the edges' weights
 pub type Path(vertex, edge) {
   Path(head: vertex, tail: List(#(vertex, edge)), cost: Int)
 }
 
+/// Returns a shortest path from the start to the end, if there is at least one.
 pub fn find_shortest_path(
   graph: Graph(vertex, edge),
   start: vertex,
   end: vertex,
 ) -> Option(Path(vertex, edge)) {
-  let q = build_queue(start)
+  let q = pq.new(vertex_compare) |> pq.push(#(start, 0))
   let dist = dict.new() |> dict.insert(start, 0)
   let prev = dict.new()
   edn.debug("compute")
